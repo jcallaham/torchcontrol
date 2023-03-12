@@ -1,18 +1,15 @@
 import torch
 from warnings import warn
 from torch import cos, sin
-from .template import ControlledSystemTemplate
+from .template import AutonomousSystem
 
 
-class ForceMass(ControlledSystemTemplate):
+class ForceMass(AutonomousSystem):
     '''System of a force acting on a mass with unitary weight'''
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)   
         
-    def dynamics(self, t, x):
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x)
-
+    def _dynamics(self, x, u):
         # States
         p = x[...,1:]
 
@@ -24,7 +21,7 @@ class ForceMass(ControlledSystemTemplate):
         return self.cur_f
 
 
-class LTISystem(ControlledSystemTemplate):
+class LTISystem(AutonomousSystem):
     """Linear Time Invariant System
     Args:
         A (Tensor): dynamics matrix
@@ -43,21 +40,18 @@ class LTISystem(ControlledSystemTemplate):
         else:
             self.B = B.to(A)
             
-    def dynamics(self, t, x):
+    def _dynamics(self, x, u):
         """The system is described by the ODE:
         dx = Ax + BU(t,x)
         We perform the operations in batches via torch.einsum()
         """
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x)
-
         # Differential equations        
         dx = torch.einsum('jk, ...bj -> ...bk', self.A, x) + \
             torch.einsum('ij, ...bj -> ...bi', self.B, u)
         return dx
     
 
-class SpringMass(ControlledSystemTemplate):
+class SpringMass(AutonomousSystem):
     """
     Spring Mass model
     """
@@ -66,10 +60,7 @@ class SpringMass(ControlledSystemTemplate):
         self.m  = 1. 
         self.k  = 0.5
 
-    def dynamics(self, t, x):
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x)
-
+    def _dynamics(self, x, u):
         # States
         q, p = x[..., :1], x[..., 1:]
 
@@ -80,23 +71,22 @@ class SpringMass(ControlledSystemTemplate):
         return self.cur_f
 
 
-class Pendulum(ControlledSystemTemplate):
+class Pendulum(AutonomousSystem):
     """
     Inverted pendulum with torsional spring
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)        
         self.m  = 1. 
-        self.k  = 0.5
+        self.k  = 0.0 #0.5
         self.l  = 1
         self.qr = 0
         self.beta  = 0.01
         self.g  = 9.81
+        self.state_dim = 2
+        self.act_dim = 1
 
-    def dynamics(self, t, x):
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x)
-
+    def _dynamics(self, x, u):
         # States
         q, p = x[..., :1], x[..., 1:]
 
@@ -107,7 +97,7 @@ class Pendulum(ControlledSystemTemplate):
         return self.cur_f
     
 
-class Acrobot(ControlledSystemTemplate):
+class Acrobot(AutonomousSystem):
     """
     Acrobot: underactuated 2dof manipulator
     """
@@ -121,10 +111,7 @@ class Acrobot(ControlledSystemTemplate):
         self.b2 = 1
         self.g  = 9.81
 
-    def dynamics(self, t, x):
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x)
-
+    def dynamics(self, x, u):
         with torch.set_grad_enabled(True):
             # States
             q1, q2, p1, p2 = x[:, :1], x[:, 1:2], x[:, 2:3], x[:, 3:4]
@@ -149,7 +136,7 @@ class Acrobot(ControlledSystemTemplate):
         return self.cur_f
 
 
-class CartPole(ControlledSystemTemplate):
+class CartPole(AutonomousSystem):
     '''Continuous version of the OpenAI Gym cartpole
     Inspired by: https://gist.github.com/iandanforth/e3ffb67cf3623153e968f2afdfb01dc8'''
     def __init__(self, *args, **kwargs):
@@ -161,10 +148,7 @@ class CartPole(ControlledSystemTemplate):
         self.length = 0.5
         self.polemass_length = (self.masspole * self.length)
         
-    def dynamics(self, t, x_):
-        self.nfe += 1 # increment number of function evaluations
-        u = self._evaluate_controller(t, x_) # controller
-        
+    def dynamics(self, x_, u):
         # States
         x   = x_[..., 0:1]
         dx  = x_[..., 1:2]

@@ -3,6 +3,35 @@ from torch import nn
 from warnings import warn
 tanh = nn.Tanh() 
 
+class NoController(nn.Module):
+    """Constant zero controller"""
+    def __init__(self, shape=(1,1)):
+        super().__init__()
+        self.u0 = torch.zeros(*shape)
+        
+    def forward(self, t, x):
+        return self.u0
+    
+class LinearFeedbackController(nn.Module):
+    def __init__(
+            self,
+            K,
+            x0=None,
+        ):
+        super().__init__()
+
+        if x0 is None:
+            x0 = torch.zeros((K.shape[1], 1), dtype=K.dtype, device=K.device)
+
+        self.K = nn.Linear(K.shape[1], K.shape[0], bias=None)
+        self.K.weight.data = K
+        self.x0 = x0
+
+
+    def forward(self, t, x):
+        # return torch.einsum('ij, ...bj -> ...bi', self.K, x)
+        return -self.K(x - self.x0)
+
 class BoxConstrainedController(nn.Module):
     """Simple controller  based on a Neural Network with
     bounded control inputs

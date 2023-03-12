@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+from torch.autograd.functional import jacobian
+
 from torchdyn.numerics.odeint import odeint
 
 class ControlledSystemTemplate(nn.Module):
@@ -57,9 +59,48 @@ class ControlledSystemTemplate(nn.Module):
             self.cur_u = self.u(t, x)
         return self.cur_u
     
-        
-    def dynamics(self, t, x):
+    
+    def _dynamics(self, t, x, u):
         '''
         Model dynamics in the form xdot = f(t, x, u)
         '''
         raise NotImplementedError
+    
+
+    def dynamics(self, t, x):
+        '''
+        Model dynamics in the form xdot = f(t, x)
+
+        Wraps control evaluation to hide from upstream ODE solvers
+        '''
+        self.nfe += 1 # increment number of function evaluations
+        u = self._evaluate_controller(t, x)
+        return self._dynamics(t, x, u)
+    
+
+class AutonomousSystem(ControlledSystemTemplate):
+    def _dynamics(self, x, u):
+        '''
+        Model dynamics in the form xdot = f(x, u)
+        '''
+        raise NotImplementedError
+
+    def dynamics(self, t, x):
+        '''
+        Model dynamics in the form xdot = f(t, x)
+
+        Wraps control evaluation to hide from upstream ODE solvers
+        '''
+        self.nfe += 1 # increment number of function evaluations
+        u = self._evaluate_controller(t, x)
+        return self._dynamics(x, u)
+    
+
+    def linearize(self, x0, u0=None):
+        if u0 is None:
+            u0 = torch.zeros_like(self._evaluate_controller(0.0, x0))
+            print(u0)
+
+        A, B = jacobian(self._dynamics, (x0, u0))
+
+        return A[0, :, 0, :], B[0, :, 0, :]
